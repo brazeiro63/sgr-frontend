@@ -45,7 +45,7 @@ export default function Projetos() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ nome, descricao, escopo }),
+        body: JSON.stringify({ nome, descricao, escopo, perspectiva, funcoes, restricoes }),
       });
       if (!response.ok) throw new Error("Erro ao salvar projeto");
       setNome("");
@@ -102,7 +102,7 @@ export default function Projetos() {
           escopo,
           perspectiva,
           funcoes,
-          restricoes,
+          restricoes
         }),
       });
   

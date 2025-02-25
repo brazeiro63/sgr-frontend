@@ -5,6 +5,7 @@ const API_URL = "http://192.168.0.46:8000/api"; // Confirme que está correto
 
 export default function Dashboard() {
   const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
   const [requisitos, setRequisitos] = useState([]);
   const [projetos, setProjetos] = useState([]);
   const [historico, setHistorico] = useState({});
@@ -13,9 +14,14 @@ export default function Dashboard() {
   const [descricao, setDescricao] = useState("");
   const [versao, setVersao] = useState("1.0");
   const [editando, setEditando] = useState(null);
-  const [projetoSelecionado, setProjetoSelecionado] = useState(() => {
-    return localStorage.getItem("projetoSelecionado") || "";
-  });
+  const [drs, setDRS] = useState(null);
+  const [projetoSelecionado, setProjetoSelecionado] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setProjetoSelecionado(localStorage.getItem("projetoSelecionado") || "");
+    }
+  }, []);
 
   const estadosDisponiveis = ["Proposto", "Aprovado", "Rejeitado", "Implementado", "Em Produção"];
 
@@ -55,7 +61,8 @@ export default function Dashboard() {
     if (!projetoId) return;
     const token = localStorage.getItem("token");
     try {
-      const response = await fetch(`${API_URL}/requisitos?projeto_id=${projetoId}`, {
+      const response = await fetch(`${API_URL}/requisitos/?projeto_id=${projetoId}`, {
+        method: "GET",
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Erro ao carregar requisitos");
@@ -125,7 +132,9 @@ export default function Dashboard() {
     try {
       const response = await fetch(`${API_URL}/requisitos/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`,
+      },
+      body:({}),
       });
 
       if (!response.ok) throw new Error("Erro ao excluir requisito");
@@ -136,6 +145,73 @@ export default function Dashboard() {
     }
   };
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedDRS = localStorage.getItem("drs");
+      if (savedDRS) {
+        setDRS(JSON.parse(savedDRS));
+      }
+    }
+  }, []);
+
+  const handleGerarDRS = async () => {
+    const token = localStorage.getItem("token");
+    const project_id = localStorage.getItem("projetoSelecionado");
+    const drs = localStorage.getItem("drs");
+  
+    setIsLoading(true); // Indicador de carregamento ativo
+    const controller = new AbortController();
+    const timeout = 120000; // 120 segundos
+  
+    try {
+      // Promise que aborta a requisição caso o tempo exceda 20s
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => {
+          controller.abort();
+          reject(new Error("Tempo limite excedido ao gerar o DRS."));
+        }, timeout)
+      );
+  
+      // Requisição para gerar o DRS
+      const fetchPromise = fetch(`${API_URL}/requisitos/gerar_drs/${project_id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+        signal: controller.signal, // AbortController conectado
+      });
+  
+      // Executa a requisição e o timeout concorrentes
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
+  
+      // Verifica se a resposta foi bem-sucedida
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        throw new Error(`Erro ${response.status}: ${errorMessage}`);
+      }
+  
+      // Converte a resposta para JSON e armazena o DRS
+      const data = await response.json();
+
+      if (!data || Object.keys(data).length === 0) {
+        throw new Error("DRS retornado está vazio.");
+      }
+
+      setDRS(data);
+      console.log("DRS gerado:", data);
+    } catch (error) {
+      if (error.name === "AbortError") {
+        console.error("A requisição foi abortada devido ao tempo de espera.");
+      } else {
+        console.error("Erro ao solicitar geração do DRS:", error.message);
+      }
+    } finally {
+      setIsLoading(false); // Indicador de carregamento desativado
+    }
+  };
+    
   return (
     <div className="p-6">
       <h1 className="text-3xl font-bold text-gray-900">Bem-vindo, {user?.name || "Usuário"}!</h1>
@@ -200,8 +276,27 @@ export default function Dashboard() {
 
       <div className="mt-6 flex space-x-4">
         <button className="bg-green-500 text-white px-4 py-2 rounded" onClick={() => router.push("/projetos")}>Gerenciar Projetos</button>
+        <button onClick={() => handleGerarDRS()} className="bg-green-500 text-white px-4 py-2 rounded">Gerar o DRS</button>
         <button className="bg-red-500 text-white px-4 py-2 rounded" onClick={() => { localStorage.removeItem("token"); router.push("/login"); }}>Sair</button>
       </div>
+
+      {/* Seção para exibição da mensagem de geração do DRS */}
+      {isLoading && (
+        <div className="bg-gray-200 p-4 mt-6 rounded-lg shadow-md">
+          <h2 className="text-2xl font-bold text-gray-900">Agarde enquanto geramos o DRS...</h2>
+        </div>
+      )}
+
+      {/* Seção para exibição do DRS (aparece somente quando o DRS for gerado) */}
+      {drs && (
+        <div className="bg-gray-200 p-4 mt-6 rounded-lg shadow-md">
+          <h2 className="text-2xl font-bold text-gray-900">Documento de Requisitos do Software (DRS)</h2>
+          <pre className="bg-white p-4 rounded-lg mt-2 text-sm overflow-auto border">
+            {JSON.stringify(drs, null, 2)}
+          </pre>
+        </div>
+      )}
+
     </div>
   );
 }
